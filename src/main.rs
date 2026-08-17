@@ -12,6 +12,8 @@
 
 // minmatch de 4 bytes/caracteres
 
+const MINMATCH: usize = 4;
+
 fn main() {
     
     let texto:String = String::from("Olá, computador, computador. Este é um texto de teste para testar o compressor manual do Clubix!. Qualquer semelhança com outro compressor é mera coincidência. computadores são legais!");
