@@ -16,21 +16,50 @@ const MINMATCH: usize = 4;
 
 fn main() {
     
-    let texto:String = String::from("Olá, computador, computador. Este é um texto de teste para testar o compressor manual do Clubix!. Qualquer semelhança com outro compressor é mera coincidência. computadores são legais!");
+    let texto:String = String::from("Ola, computador, computador. Este e um texto de teste para testar o compressor manual do Clubix!. Qualquer semelhanca com outro compressor e mera coincidencia. computadores são legais!");
     let dados: &[u8] = texto.as_bytes();
 
     let mut saida:Vec<u8> = Vec::new();
 
-    let mut p:usize = 4;
+    let mut p:usize = 0;
+    let mut p_end:usize = MINMATCH;
 
-    let mut aux:usize = 0;
+    let mut token_position = 0;
     
-    while p<dados.len(){
-        let aux_char = dados[p] as char;
-        println!("{}", aux_char);
-        p= p + 1 ;
+    let mut token:u8 = 0;
+    
+    while p_end<dados.len(){
+        
+        println!(" Byte atual[{}..{}] -> {} ", p, p_end, std::str::from_utf8(&dados[p..p_end]).unwrap());
+
+        let mut aux:usize = 0;
+        let mut count:usize = 0;
+        let mut count_end:usize = MINMATCH;
+
+        while count_end<p{
+            while true {
+                if dados[count..count_end] == dados[p..p_end] && count_end<=p{
+                    println!("Match encontrado -> [{}..{}] == [{}..{}] | {}", count, count_end, p, p_end, std::str::from_utf8(&dados[count..count_end]).unwrap());
+                    count_end += 1;
+                    p_end += 1;
+    
+                }else{
+                    count_end-=1;
+                    p_end=p+MINMATCH;
+                    break;
+                }
+                
+            }
+
+            count = count_end ;
+            count_end = count + MINMATCH;
+
+        }
+        
+
+        p = p + 1;
+        p_end = p + MINMATCH;
+        
     }
     
-    
-    println!("Hello, world!");
 }
