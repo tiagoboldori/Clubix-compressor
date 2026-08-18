@@ -13,6 +13,14 @@
 
 const MINMATCH: usize = 4;
 
+
+fn decompressor(  dados_dec: &Vec<u8>){
+    let mut saida: Vec<u8> = Vec::new();
+    
+    let mut p:usize = 0;
+    
+}
+
 fn main() {
     
     let texto:String = String::from("Ola, computador, computador. Este e um texto de teste para testar o compressor manual do Clubix!. Qualquer semelhanca com outro compressor e mera coincidencia. computadores sao legais!");
@@ -26,7 +34,7 @@ fn main() {
     let mut literal_count:u16 = 0;
     
 
-    let mut token_pos = 0;
+    let mut token_pos: usize = 0;
     
     while p_end<dados.len(){
         
@@ -64,7 +72,7 @@ fn main() {
 
         }
 
-        if b_match==true || literal_count==15{
+        if b_match==true {
             
             // transferir count de literais para nible alto
             // criar nible baixo com o offset / match len
@@ -76,9 +84,7 @@ fn main() {
             
             let offset: u16= (p-count) as u16;
 
-            let  mut extra_literals:u8 = 0;
-
-            let mut token:u8 = 0; 
+            let mut token:u8; 
 
             if literal_count>=15{
 
@@ -121,6 +127,5 @@ fn main() {
         
     }
     
-    println!("Saída -> {}",std::str::from_utf8(&saida).unwrap());
 
 }
