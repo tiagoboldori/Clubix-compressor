@@ -45,8 +45,17 @@ fn decompressor(  dados_dec: &Vec<u8>){
             p = aux;
         }
 
-        println!("Token {} ... Literais encontrados: {}", p, literal_count);
-        
+        let lo = dados_dec[p + 1 + literal_count as usize] as u16;
+        let hi = dados_dec[p + 2 + literal_count as usize] as u16;
+        offset = (lo | (hi << 8)) as usize;
+
+
+        println!("Token {} | Offset {} ... Literais encontrados: {}", p, offset, literal_count);
+        println!("Descomprimindo primeira sequence ...");
+        saida.extend_from_slice(&dados_dec[p..p+(literal_count as usize)+1]);
+        saida.extend_from_slice(&dados_dec[p+(literal_count as usize)-offset..p+literal_count as usize + match_len ]);
+        println!("Saida (decomprimida): {}", String::from_utf8_lossy(&saida));
+        break;
 
     }
     
