@@ -11,6 +11,7 @@
 
 // minmatch de 4 bytes/caracteres
 
+
 const MINMATCH: usize = 4;
 
 
@@ -18,6 +19,36 @@ fn decompressor(  dados_dec: &Vec<u8>){
     let mut saida: Vec<u8> = Vec::new();
     
     let mut p:usize = 0;
+    
+    while true{
+        let token_pos: usize = p;
+        let token = dados_dec[token_pos];
+
+        let mut aux: usize = p ;
+
+        let mut literal_count: u16 = ((token >>4) &0x0F )as u16;
+        let match_len: usize = (token &0x0F) as usize;
+        let mut offset: usize;
+        
+        if literal_count >=15{
+            aux+=1;
+
+            while ((dados_dec[aux]) as u16) >= 255{
+               literal_count+=dados_dec[aux] as u16; 
+               aux+=1;
+            }
+            
+            if (dados_dec[aux] as u16) < 255 {
+                literal_count += dados_dec[aux] as u16;
+            }
+            
+            p = aux;
+        }
+
+        println!("Token {} ... Literais encontrados: {}", p, literal_count);
+        
+
+    }
     
 }
 
@@ -96,7 +127,7 @@ fn main() {
                 
                 while literal_count>=255{
                     saida.push(255);
-                    literal_count-=255;
+                    literal_count= literal_count.saturating_sub(255);
                 }
                 saida.push(literal_count as u8);
 
@@ -126,6 +157,7 @@ fn main() {
         }
         
     }
-    
+
+    decompressor(&saida); 
 
 }
