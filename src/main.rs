@@ -23,6 +23,7 @@
 // - Extensao para match_len > 15 (extensão para nibble baixop)
 
 
+
 const MINMATCH: usize = 4;
 
 
@@ -31,7 +32,7 @@ fn decompressor(  dados_dec: &Vec<u8>){
     
     let mut p:usize = 0;
     
-    while p<=dados_dec.len(){
+    while p<dados_dec.len(){
 
         let token_pos: usize = p;
         let token = dados_dec[token_pos];
@@ -42,33 +43,33 @@ fn decompressor(  dados_dec: &Vec<u8>){
         
         let mut offset: usize;
         
+        let mut ext_bytes:usize = 0;
+        
         if literal_count >=15{
 
-            p+=1;
+            ext_bytes+=1;
 
-            while ((dados_dec[p]) as u16) >= 255{
-               literal_count += dados_dec[p] as u16; 
-               p+= 1;
+            while ((dados_dec[p+ext_bytes]) as u16) >= 255{
+               literal_count += dados_dec[p+ext_bytes] as u16; 
+               ext_bytes+= 1;
             }
             
-            if (dados_dec[p] as u16) < 255 {
-                literal_count += dados_dec[p] as u16;
+            if (dados_dec[p+ext_bytes] as u16) < 255 {
+                literal_count += dados_dec[p+ext_bytes] as u16;
             }
             
         }
 
-        if dados_dec.len() > p + 2 + literal_count as usize{
-            let l: u16 = dados_dec[p + 1 + literal_count as usize] as u16;
-            let h: u16 = dados_dec[p + 2 + literal_count as usize] as u16;
+        if dados_dec.len() > p + ext_bytes + 2 + literal_count as usize{
+            let l: u16 = dados_dec[p + ext_bytes + 1 + literal_count as usize] as u16;
+            let h: u16 = dados_dec[p + ext_bytes + 2 + literal_count as usize] as u16;
             offset = (l | (h << 8)) as usize;
         }else{
             offset = 0;
         }
         
-        println!("Token {} | Offset {} ... Literais encontrados: {}", p, offset, literal_count);
-        println!("Descomprimindo primeira sequence ...");
-        
-        saida.extend_from_slice(&dados_dec[p + 1.. p + (literal_count as usize) + 1]);
+
+        saida.extend_from_slice(&dados_dec[p + ext_bytes + 1.. p + ext_bytes + (literal_count as usize) + 1]);
         
         // logica para encontrar slice a ser copiado:
         // p + literal = fim do slice, ou seja, basta subtrair o offset disso para saber onde inicia o match
@@ -82,13 +83,15 @@ fn decompressor(  dados_dec: &Vec<u8>){
         }
         
 
-        println!("Saida (descomprimida): {}", String::from_utf8_lossy(&saida));
-
+        //println!("Saida (descomprimida): {}", String::from_utf8_lossy(&saida));
+        
         //verificar p (posição no comeco da sequencia de literais)
-        //
-        p = p + literal_count as usize + 3;
+        p = p + literal_count as usize + ext_bytes + 3;
 
     }
+
+    println!("Saida (descomprimida): {}", String::from_utf8_lossy(&saida));
+
     
 }
 
@@ -99,8 +102,18 @@ fn decompressor(  dados_dec: &Vec<u8>){
 //              COMPRESSOR
 fn main() {
     
-    let texto:String = String::from("Ola, computador, computador. Este e um texto de teste para testar o compressor manual do Clubix!. Qualquer semelhanca com outro compressor e mera coincidencia. computadores sao legais! Um compressor serve, principalmente, para comprimir arquivos. A ideia e que eles gastem a menor quantidade de espaco possivel no disco do computador.Ola Mundo.");
-    let dados: &[u8] = texto.as_bytes();
+    //let texto:String = String::from("Ola, computador, computador. Este e um texto de teste para testar o compressor manual do Clubix!. Qualquer semelhanca com outro compressor e mera coincidencia. computadores sao legais! Um compressor serve, principalmente, para comprimir arquivos. A ideia e que eles gastem a menor quantidade de espaco possivel no disco do computador.Ola Mundo.");
+    //let dados: &[u8] = texto.as_bytes();
+    
+    let arquivo =std::fs::read("shrek2.txt"); 
+    let dados = match arquivo{
+        Ok(T) => T,
+        Err(err) =>{
+            println!("Erro");
+            return ();
+        }
+    };
+
 
     let mut saida:Vec<u8> = Vec::new();
 
@@ -115,7 +128,7 @@ fn main() {
     
     while p_end<dados.len(){
         
-        println!(" Byte atual[{}..{}] -> {} ", p, p_end, std::str::from_utf8(&dados[p..p_end]).unwrap());
+        //println!(" Byte atual[{}..{}] -> {} ", p, p_end, String::from_utf8_lossy(&dados[p..p_end]));
 
         // apontam para intervalo onde estamos buscando o match atual
         let mut count:usize = p.saturating_sub(65535);
@@ -124,7 +137,7 @@ fn main() {
         //apontam para intervalo onde está o maior match encontrado
         let mut m:usize = count;
         let mut m_end: usize = count_end;
-        let mut m_size:usize = m_end - m;
+        let mut m_size:usize = 0;
 
 
         //confirma se existe match para o loop/busca atual 
@@ -133,13 +146,17 @@ fn main() {
 
         while count_end<p{
             while true {
-                if dados[count..count_end] == dados[p..p_end] && count_end<=p{
+                if p_end-p<=15 && dados[count..count_end] == dados[p..p_end] && count_end<=p{
 
-                    println!("Match encontrado -> [{}..{}] == [{}..{}] | {}", count, count_end, p, p_end, std::str::from_utf8(&dados[count..count_end]).unwrap());
+                    //println!("Match encontrado -> [{}..{}] == [{}..{}] | {}", count, count_end, p, p_end, String::from_utf8_lossy(&dados[count..count_end]));
+                    if (count_end - count) > m_size{
+                        m = count;
+                        m_end = count_end;
+                        m_size = m_end - m;
+                    }
                     b_match = true;
                     
                 }else{
-                    count_end-=1;
                     p_end=p+MINMATCH;
                     break;
                 }
@@ -148,11 +165,7 @@ fn main() {
             }
 
 
-            if b_match==true{
-                break;
-            }
-
-            count = count_end ;
+            count +=1 ;
             count_end = count + MINMATCH;
 
         }
@@ -163,11 +176,11 @@ fn main() {
             // criar nible baixo com o offset / match len
             //adicionar / alterar token
             
-            println!("{}",literal_count);
+            //println!("{}",literal_count);
 
-            let match_len:u8 = (count_end - count - MINMATCH) as u8;
+            let match_len:u8 = (m_size - MINMATCH) as u8;
             
-            let offset: u16= (p-count) as u16;
+            let offset: u16= (p-m) as u16;
 
             let mut token:u8; 
 
@@ -195,14 +208,14 @@ fn main() {
 
             saida.extend_from_slice(&dados[token_pos..p]);
             saida.extend_from_slice(&offset.to_le_bytes());
-            
+
 
             literal_count = 0;
             p +=  (match_len) as usize + (MINMATCH) as usize;
             p_end = p + MINMATCH;
             token_pos = p;
 
-            println!("token -> literals:{} | Tamanho do match:{} | Offset: {}",(token >> 4) & 0x0F, token & 0x0F, offset);
+            //println!("token -> literals:{} | Tamanho do match:{} | Offset: {}",(token >> 4) & 0x0F, token & 0x0F, offset);
 
         }else{
             p = p + 1;
@@ -248,8 +261,8 @@ fn main() {
     }
     
     println!("Tamanho final da saída {} | entrada {}  | Taxa de compressao: {} ", saida.len(), dados.len(), (1 as f32 - (saida.len()) as f32/(dados.len()) as f32) );
-    println!("Saida (bytes): {:?}", saida);
-    println!("Saida (lossy string): {}", String::from_utf8_lossy(&saida));
+    //println!("Saida (bytes): {:?}", saida);
+    //println!("Saida (lossy string): {}", String::from_utf8_lossy(&saida));
 
     decompressor(&saida);
 
