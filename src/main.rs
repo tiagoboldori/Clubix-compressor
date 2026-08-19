@@ -22,15 +22,45 @@
 // - Flush ao final do loop de compressao (feito parcial, necessario testes)
 // - Extensao para match_len > 15 (extensão para nibble baixop)
 
+use std::env;
+
 
 
 const MINMATCH: usize = 4;
 
+fn decompress_file(file_name:&String){
 
-fn decompressor(  dados_dec: &Vec<u8>){
+    let arquivo = std::fs::read(file_name);
+
+    let dados_dec = match arquivo{
+        Ok(dados) => dados,
+        Err(err) =>{
+            println!("Erro");
+            return;
+        }
+    };
+
+    let extensao = String::from_utf8_lossy(
+        &dados_dec[0..4].iter().cloned().take_while(|&b| b != 0).collect::<Vec<u8>>()
+    ).into_owned();
+
+    let saida = decompressor(&dados_dec);
+
+    let path = std::path::Path::new(file_name);
+    let parent = path.parent().unwrap_or_else(|| std::path::Path::new(""));
+    let stem = path.file_stem().unwrap_or_default().to_string_lossy();
+    let nome_saida = parent.join(format!("{}_.{}", stem, extensao));
+
+    match std::fs::write(&nome_saida, saida){
+        Ok(_) => println!("Arquivo salvo em {}", nome_saida.display()),
+        Err(err) => println!("Erro ao salvar arquivo: {}", err),
+    }
+}
+fn decompressor(dados_dec: &Vec<u8> ) -> Vec<u8>{
+
     let mut saida: Vec<u8> = Vec::new();
     
-    let mut p:usize = 0;
+    let mut p:usize = 4;
     
     while p<dados_dec.len(){
 
@@ -92,11 +122,23 @@ fn decompressor(  dados_dec: &Vec<u8>){
 
     println!("Saida (descomprimida): {}", String::from_utf8_lossy(&saida));
 
-    
+    saida
 }
 
 
+fn read_file_extension(file_name: &String) -> [u8;4]{
+    let extensao = std::path::Path::new(file_name)
+        .extension()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
 
+    let mut header: [u8; 4] = [0; 4];
+    for (i, b) in extensao.bytes().take(4).enumerate() {
+        header[i] = b;
+    }
+    header
+}
 
 
 //              COMPRESSOR
@@ -105,7 +147,18 @@ fn main() {
     //let texto:String = String::from("Ola, computador, computador. Este e um texto de teste para testar o compressor manual do Clubix!. Qualquer semelhanca com outro compressor e mera coincidencia. computadores sao legais! Um compressor serve, principalmente, para comprimir arquivos. A ideia e que eles gastem a menor quantidade de espaco possivel no disco do computador.Ola Mundo.");
     //let dados: &[u8] = texto.as_bytes();
     
-    let arquivo =std::fs::read("shrek2.txt"); 
+    let args: Vec<String> = std::env::args().collect();
+
+    if args[1] == "decompress"{
+        decompress_file(&args[2]);
+    }
+
+    let file_name : &String = &args[1];
+    
+
+    let header = read_file_extension(file_name);    
+
+    let arquivo =std::fs::read(&args[1]);
     let dados = match arquivo{
         Ok(T) => T,
         Err(err) =>{
@@ -116,9 +169,10 @@ fn main() {
 
 
     let mut saida:Vec<u8> = Vec::new();
+    saida.extend_from_slice(&header);
 
     let mut p:usize = 0;
-    let mut p_end:usize = MINMATCH;
+    let mut p_end:usize = p+MINMATCH;
 
     let mut literal_count:u16 = 0;
     
@@ -264,6 +318,16 @@ fn main() {
     //println!("Saida (bytes): {:?}", saida);
     //println!("Saida (lossy string): {}", String::from_utf8_lossy(&saida));
 
-    decompressor(&saida);
+    let path = std::path::Path::new(file_name);
+    let parent = path.parent().unwrap_or_else(|| std::path::Path::new(""));
+    let stem = path.file_stem().unwrap_or_default().to_string_lossy();
+    let nome_saida = parent.join(format!("{}.tzp", stem));
+
+    match std::fs::write(&nome_saida, &saida){
+        Ok(_) => println!("Arquivo salvo em {}", nome_saida.display()),
+        Err(err) => println!("Erro ao salvar arquivo: {}", err),
+    }
+
+    //decompressor(&saida);
 
 }
