@@ -85,3 +85,41 @@ Com as duas corrigidas, um run de 10.000 zeros vira basicamente 1 token só, cus
 
 Sugestão pra ordem do refatoração
 Já que você vai reescrever do zero: eu implementaria a Melhoria 1 primeiro (é mais mecânica, você já tem o modelo pronto no código de literais) e testaria com o abcd×N que eu usei antes. Depois a Melhoria 2, testando especificamente com um arquivo de bytes repetidos (tipo os 5000 zeros que eu testei) — assim você confirma visualmente que cada melhoria resolveu o problema que deveria resolver, antes de combinar as duas.
+
+
+
+Boa, isso fecha a decisão do lado do compress. E sobre o header, combinado — deixo de lado até você implementar na compressão.
+
+No compress, falta gatear a extensão do match pela mesma condição que já decide o nibble (main.rs:221-255)
+
+Hoje o nibble é decidido condicionalmente (if match_len>=15 {...} else {...}), mas a escrita da extensão roda sempre, incondicional:
+
+
+//expansao de match
+while match_len>=255{
+    compressed.push(255);
+    match_len -= 255;
+}
+compressed.push(match_len as u8);
+Pra seguir a regra "só extensão quando nibble baixo == 15", isso precisa: (a) só executar quando match_len original era >=15, e (b) subtrair os 15 do nibble antes de escrever a extensão — exatamente como já é feito do lado do literal (literal_count -= 15 na linha 212). Hoje falta essa subtração pro match, então mesmo se você gatear a escrita, o valor ficaria errado (contando os 15 do nibble de novo). Ideia:
+
+
+let match_saturated = match_len >= 15;
+if match_saturated {
+    match_len -= 15;
+}
+...
+compressed.push(token);
+...
+if match_saturated {
+    while match_len >= 255 {
+        compressed.push(255);
+        match_len -= 255;
+    }
+    compressed.push(match_len as u8);
+}
+E o lado do decompressor que já existia pra match tem dois bugs relativos a essa mesma regra — comparando com o decode de literal que está correto (main.rs:33-42 vs main.rs:59-67):
+
+Linha 60: match_len += 15; — isso soma 15 de novo em cima do nibble que já vale 15. O literal não faz isso (ele já começa em 15 vindo do nibble e só acumula os bytes de extensão por cima). Essa linha deveria simplesmente não existir — só marcar que há extensão (m_extra_bytes vai cuidar da contagem de bytes).
+Falta o passo final que o literal tem na linha 41 (literal_count += bytes[idx+extra_bytes] as u128; depois do while) — o while do match (linha 64-67) só soma quando o byte é >=255 e incrementa m_extra_bytes, mas nunca soma o último byte (o que quebra o loop, <255) nem conta ele em m_extra_bytes. Sem isso, o valor final de match_len fica sempre faltando o último pedaço, e o idx da próxima sequência (linha 81) desalinha porque não contou esse byte.
+Resumindo: dá pra copiar exatamente o padrão do literal pro match (mesma estrutura, só trocando os nomes de variável) — hoje as duas versões deveriam ser espelhadas e não são. Quer que eu aplique isso nos dois lados, ou você quer escrever essa parte?
