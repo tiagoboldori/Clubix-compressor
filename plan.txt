@@ -1,0 +1,87 @@
+Guia: as duas melhorias que você quer levar pro código novo
+Vou explicar cada uma do zero, sem pressupor nada. As duas mexem em "matching", mas resolvem problemas completamente diferentes e independentes.
+
+Contexto rápido: como um "match" é guardado hoje
+Cada trecho comprimido é um "token" (1 byte) + dados extras. O token se divide em dois nibbles (4 bits cada):
+
+
+byte do token:  [ XXXX | YYYY ]
+                 alto    baixo
+                 |       |
+                 |       tamanho do match - 4
+                 quantidade de literais
+Um nibble só guarda números de 0 a 15. Isso é o coração dos dois problemas.
+
+Melhoria 1 — Expansão do nibble de match (tirar o limite de 15 bytes por match)
+O problema, em português bem simples
+O nibble baixo guarda "tamanho do match menos 4" (porque todo match tem no mínimo 4 bytes — essa é a regra MINMATCH). Como o nibble só vai até 15, o tamanho MÁXIMO de um match hoje é 15 + 4 = 19 bytes... só que na prática seu código de compressão nem deixa chegar lá: ele já corta em 15 bytes totais antes disso (a condição p_end-p<=15 no loop de matching).
+
+Isso significa: se você tem uma sequência de 3000 bytes idênticos repetidos (por exemplo, um monte de espaço vazio dentro de uma ISO), o compressor não consegue dizer "copie 3000 bytes de volta" em um único token. Ele é obrigado a quebrar isso em ~200 tokens separados, cada um dizendo "copie só até 15 bytes".
+
+Cada token custa 3 bytes fixos de "aluguel" (1 byte do token + 2 bytes do offset). Então pra cobrir os 3000 bytes você paga 200 × 3 = 600 bytes só de overhead — 20% do tamanho original só em "taxas administrativas", quando o ideal seria pagar isso uma única vez.
+
+A boa notícia: você já tem a solução pronta, só não está aplicada no lugar certo
+Olha o código de literal_count (a quantidade de literais, nibble ALTO) — ele já resolve exatamente esse mesmo problema, só que pro nibble de cima. A lógica é:
+
+Se a contagem real for menor que 15, guarda o valor direto no nibble. Acabou, não precisa de mais nada.
+Se a contagem real for 15 ou mais, você escreve 15 no nibble (isso funciona como uma "bandeirinha": "ei, não é o valor real, tem mais informação depois").
+Depois do token, você escreve bytes extras com o "resto" da contagem:
+Se o resto for 255 ou mais, escreve o byte 255 (que funciona como outra bandeirinha: "ainda tem mais, continua lendo") e subtrai 255 do resto. Repete quantas vezes precisar.
+Quando o resto finalmente for menor que 255, escreve esse valor final (pode ser inclusive 0) e para. Esse é o byte que "encerra" a contagem.
+Exemplo concreto: quantidade real = 320 literais.
+
+320 ≥ 15 → nibble = 15 (bandeira "tem mais")
+resto = 320 - 15 = 305
+305 ≥ 255 → escreve byte 255, resto = 305 - 255 = 50
+50 < 255 → escreve byte 50 (valor final) e para
+Bytes na "fita": [token com nibble=15] [255] [50]. Pra decodificar, você faz o caminho inverso: nibble=15 → "tem extensão" → lê 255 → soma, "ainda tem mais" → lê 50 → soma e para (50<255 diz "esse foi o último"). Total: 15 + 255 + 50 = 320. Bate.
+
+O que fazer
+Exatamente essa mesma técnica, só que pro nibble baixo (match_len) em vez do alto (literal_count). Você já tem o código funcionando como referência — é literalmente copiar o "esqueleto" da lógica de extensão de literais e aplicar pro tamanho do match, tanto na hora de escrever (compressor) quanto na hora de ler (descompressor).
+
+Com isso, matches de qualquer tamanho passam a custar só um pouquinho mais que 3 bytes fixos, independente de serem 15 bytes ou 15.000 bytes.
+
+Melhoria 2 — Permitir offset menor que o tamanho do match (matches "sobrepostos")
+Essa é mais sutil. Vou com calma.
+
+O que é "offset"
+Quando o compressor acha um match, ele não copia os bytes de novo — ele diz "vá X posições pra trás no que você já reconstruiu, e copie N bytes a partir daí". Esse "X" é o offset.
+
+O problema, com um exemplo visual
+Imagina que o arquivo original é: AAAAAAAAAA (10 letras "A"). A forma mais eficiente de comprimir isso é: escreve 1 literal A, depois diz "volte 1 posição e copie 9 bytes".
+
+Só que aqui rola uma coisa estranha: quando você "copia 9 bytes voltando 1 posição", você está tentando ler bytes que ainda nem existem no resultado final — porque você está construindo eles NA HORA, usando eles mesmos como fonte. É como fotocopiar uma folha, e usar a cópia que ainda está saindo da impressora como original pra próxima cópia.
+
+Isso só funciona se você copiar byte por byte, um de cada vez, deixando cada byte novo ficar disponível pro próximo:
+
+
+Resultado até agora: "A"
+Copiar da posição (atual - 1) = índice 0 → pega "A" → resultado: "AA"
+Copiar da posição (atual - 1) = índice 1 → pega o "A" que ACABOU de ser escrito → resultado: "AAA"
+Copiar da posição (atual - 1) = índice 2 → pega o "A" anterior de novo → resultado: "AAAA"
+... e assim por diante
+Repara que a fonte "persegue" o destino, sempre 1 passo atrás. Isso é chamado de match sobreposto (overlap): quando o offset (distância pra trás) é menor que o tamanho do match que você quer copiar.
+
+O que já está certo, e o que ainda está errado
+O descompressor já sabe fazer isso certo — vocês já corrigiram isso antes (a cópia foi trocada de "pega o bloco inteiro de uma vez" pra "copia byte por byte, um a um"). Essa versão funciona pra offset pequeno sem problema.
+O compressor ainda se RECUSA a criar esse tipo de match. Existe uma condição (count_end<=p) que, na prática, diz: "só aceito esse match se o offset for maior ou igual ao tamanho do match". Ou seja, ele bloqueia exatamente o caso que seria mais valioso: sequências de um mesmo byte repetido (zeros, espaços, preenchimento).
+Eu testei isso na prática: mandei comprimir um arquivo de 5000 zeros e o resultado saiu maior que o original (5025 bytes) — zero matches foram aceitos, porque todo candidato tinha offset=1 e era rejeitado de cara.
+
+O que fazer
+No trecho que decide se um match é válido, a regra precisa deixar de exigir "offset ≥ tamanho do match". Ela só precisa continuar garantindo duas coisas, que são as que realmente importam:
+
+Os bytes realmente são iguais (dados[count..count_end] == dados[p..p_end]) — isso já está certo, não muda.
+O offset não pode ser maior que a janela máxima que o formato consegue representar (hoje, 65535, porque o offset é salvo em 2 bytes) — isso também já está certo.
+A parte que precisa sair (ou ser repensada) é a que compara count_end com p — é ela quem, indiretamente, impede offset pequeno.
+
+Atenção com uma pegadinha: se você permitir offset pequeno no compressor, a cópia no descompressor tem que continuar sendo obrigatoriamente byte a byte (nunca em bloco/slice de uma vez) — porque é exatamente esse jeito de copiar que faz o "efeito fotocópia" funcionar direito. Isso vocês já têm certo, só não mexam nisso de volta pra um slice em bloco.
+
+Por que as duas juntas valem tanto a pena
+Pensa numa ISO real: ela tem MUITO espaço de preenchimento (zeros, alinhamento de setor). Hoje, essa parte:
+
+Nunca vira match (bloqueada pela Melhoria 2) → tudo literal.
+E mesmo se virasse match, ficaria limitada a 15 bytes por vez (bloqueada pela Melhoria 1).
+Com as duas corrigidas, um run de 10.000 zeros vira basicamente 1 token só, custando poucos bytes — em vez de 10.000 bytes de literais crus. É a diferença entre "quase não comprime" e "comprime de verdade" pra esse tipo de conteúdo, que é bem comum em imagens de disco.
+
+Sugestão pra ordem do refatoração
+Já que você vai reescrever do zero: eu implementaria a Melhoria 1 primeiro (é mais mecânica, você já tem o modelo pronto no código de literais) e testaria com o abcd×N que eu usei antes. Depois a Melhoria 2, testando especificamente com um arquivo de bytes repetidos (tipo os 5000 zeros que eu testei) — assim você confirma visualmente que cada melhoria resolveu o problema que deveria resolver, antes de combinar as duas.
