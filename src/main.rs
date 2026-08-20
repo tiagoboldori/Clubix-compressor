@@ -16,7 +16,9 @@
 // Trocar estratégia de matching. Atual: Primeiro match. Ideal: Match mais longo.
 // Aplicar correções (essencial antes de prosseguir para manipulacao de arquivos.)
 // Implementar e adotar o uso de arquivos
-// refatoração e reestruturação / organização do codigo
+// refatoração e reestruturação / organização do codigo:
+//          - colocar compressao em funcao propria
+//          - organizar 
 
 //CORREÇÕES:
 // - Flush ao final do loop de compressao (feito parcial, necessario testes)
@@ -24,12 +26,19 @@
 
 use std::env;
 
+const G_RATIO: f64 = 1.618;
 
+//2^32 / g_ratio
+const FIB_HASH_MULT:u32 = 2654435761;
 
 const MINMATCH: usize = 4;
+const MAX_OFFSET: usize = 65535;
 
+
+
+// funcao simples para englobar decompress()
 fn decompress_file(file_name:&String){
-
+    println!("Iniciando descompressao | Hora: {:?}", std::time::SystemTime::now());
     let arquivo = std::fs::read(file_name);
 
     let dados_dec = match arquivo{
@@ -39,6 +48,7 @@ fn decompress_file(file_name:&String){
             return;
         }
     };
+
 
     let extensao = String::from_utf8_lossy(
         &dados_dec[0..4].iter().cloned().take_while(|&b| b != 0).collect::<Vec<u8>>()
@@ -56,6 +66,9 @@ fn decompress_file(file_name:&String){
         Err(err) => println!("Erro ao salvar arquivo: {}", err),
     }
 }
+
+
+
 fn decompressor(dados_dec: &Vec<u8> ) -> Vec<u8>{
 
     let mut saida: Vec<u8> = Vec::new();
@@ -67,7 +80,7 @@ fn decompressor(dados_dec: &Vec<u8> ) -> Vec<u8>{
         let token_pos: usize = p;
         let token = dados_dec[token_pos];
 
-        let mut literal_count: u16 = ((token >>4) &0x0F )as u16;
+        let mut literal_count: u128 = ((token >>4) &0x0F )as u128;
         
         let match_len: usize = (token &0x0F) as usize;
         
@@ -80,12 +93,12 @@ fn decompressor(dados_dec: &Vec<u8> ) -> Vec<u8>{
             ext_bytes+=1;
 
             while ((dados_dec[p+ext_bytes]) as u16) >= 255{
-               literal_count += dados_dec[p+ext_bytes] as u16; 
+               literal_count += dados_dec[p+ext_bytes] as u128; 
                ext_bytes+= 1;
             }
             
             if (dados_dec[p+ext_bytes] as u16) < 255 {
-                literal_count += dados_dec[p+ext_bytes] as u16;
+                literal_count += dados_dec[p+ext_bytes] as u128;
             }
             
         }
@@ -105,27 +118,36 @@ fn decompressor(dados_dec: &Vec<u8> ) -> Vec<u8>{
         // p + literal = fim do slice, ou seja, basta subtrair o offset disso para saber onde inicia o match
         // a partir da posicao do match (p+literais-offset) basta somar o match_len + MINMATCH para saber o tamanho do match, temos:
         // dados[p + literal - offset .. p + literal - offset + match_len + MINMATCH]
-        // 
+        
 
         if offset > 0{
-            let slice_dec : Vec<u8> =  saida[saida.len() - offset .. saida.len() - offset + match_len +  MINMATCH ].to_vec();
-            saida.extend_from_slice(&slice_dec);
+            let start = saida.len() - offset;
+            for i in 0..(match_len + MINMATCH){
+                let byte  = saida [start+i];
+                saida.push(byte);
+            }
         }
         
 
         //println!("Saida (descomprimida): {}", String::from_utf8_lossy(&saida));
         
         //verificar p (posição no comeco da sequencia de literais)
+        
         p = p + literal_count as usize + ext_bytes + 3;
+
 
     }
 
-    println!("Saida (descomprimida): {}", String::from_utf8_lossy(&saida));
+    //println!("Saida (descomprimida): {}", String::from_utf8_lossy(&saida));
+    println!("Descompressao finalizada | Hora: {:?}", std::time::SystemTime::now());
 
     saida
 }
 
 
+
+
+// funcao para pegar extensao de arquivos (salva no header para uso durante a descompressao)
 fn read_file_extension(file_name: &String) -> [u8;4]{
     let extensao = std::path::Path::new(file_name)
         .extension()
@@ -141,16 +163,30 @@ fn read_file_extension(file_name: &String) -> [u8;4]{
 }
 
 
+
+
+//hashing
+fn fib_hashing(bytes: &[u8], p:usize, hash_bits: u32) -> usize { 
+    let seq: u32 = u32::from_le_bytes([bytes[p], bytes[p+1], bytes[p+2], bytes[p+3]]);
+    
+    let h: u32 = seq.wrapping_mul(FIB_HASH_MULT);
+    (h >> (32 - hash_bits)) as usize
+}
+
+
+
 //              COMPRESSOR
 fn main() {
     
     //let texto:String = String::from("Ola, computador, computador. Este e um texto de teste para testar o compressor manual do Clubix!. Qualquer semelhanca com outro compressor e mera coincidencia. computadores sao legais! Um compressor serve, principalmente, para comprimir arquivos. A ideia e que eles gastem a menor quantidade de espaco possivel no disco do computador.Ola Mundo.");
     //let dados: &[u8] = texto.as_bytes();
+
     
     let args: Vec<String> = std::env::args().collect();
 
     if args[1] == "decompress"{
         decompress_file(&args[2]);
+        std::process::exit(0);
     }
 
     let file_name : &String = &args[1];
@@ -162,7 +198,7 @@ fn main() {
     let dados = match arquivo{
         Ok(T) => T,
         Err(err) =>{
-            println!("Erro");
+            println!("Erro ao ler bytes do arquivo");
             return ();
         }
     };
@@ -171,70 +207,71 @@ fn main() {
     let mut saida:Vec<u8> = Vec::new();
     saida.extend_from_slice(&header);
 
+
+    let hash_bits:u32 = 16;
+    let table_size: usize = 1 << hash_bits;
+    let mut table: Vec<Option<usize>> = vec![None;table_size];
+
+
     let mut p:usize = 0;
     let mut p_end:usize = p+MINMATCH;
 
-    let mut literal_count:u16 = 0;
+    let mut literal_count:u128 = 0;
     
-
     let mut token_pos: usize = 0;
     
+    println!("Iniciando Compressão | Hora: {:?} ", std::time::SystemTime::now());
     
     while p_end<dados.len(){
         
         //println!(" Byte atual[{}..{}] -> {} ", p, p_end, String::from_utf8_lossy(&dados[p..p_end]));
+        let idx_hash: usize = fib_hashing(&dados, p, hash_bits);
 
-        // apontam para intervalo onde estamos buscando o match atual
-        let mut count:usize = p.saturating_sub(65535);
-        let mut count_end:usize = count + MINMATCH;
         
-        //apontam para intervalo onde está o maior match encontrado
-        let mut m:usize = count;
-        let mut m_end: usize = count_end;
-        let mut m_size:usize = 0;
-
-
-        //confirma se existe match para o loop/busca atual 
+        let mut count: usize  = p;
         let mut b_match:bool = false;
-        
 
-        while count_end<p{
-            while true {
-                if p_end-p<=15 && dados[count..count_end] == dados[p..p_end] && count_end<=p{
+        let mut count_end:usize = count + MINMATCH;
 
-                    //println!("Match encontrado -> [{}..{}] == [{}..{}] | {}", count, count_end, p, p_end, String::from_utf8_lossy(&dados[count..count_end]));
-                    if (count_end - count) > m_size{
-                        m = count;
-                        m_end = count_end;
-                        m_size = m_end - m;
+        match table[idx_hash]{
+            Some(c) =>{
+                count = c;
+                count_end = count + MINMATCH;
+                while true {
+                    if p_end-p<=15 && dados[count..count_end] == dados[p..p_end] && count_end<=p && p_end < dados.len() && p - c <= MAX_OFFSET{
+
+                        b_match = true;
+
+                        count_end += 1;
+                        p_end += 1;               
+                        
+                    }else{
+                        count_end -= 1;
+                        p_end = p + MINMATCH;
+                        break;
                     }
-                    b_match = true;
-                    
-                }else{
-                    p_end=p+MINMATCH;
-                    break;
                 }
-                count_end += 1;
-                p_end += 1;               
             }
-
-
-            count +=1 ;
-            count_end = count + MINMATCH;
-
+            None=>{ 
+                ()
+            }
         }
+        
+        table[idx_hash] = Some(p);
+
 
         if b_match==true {
             
             // transferir count de literais para nible alto
-            // criar nible baixo com o offset / match len
+            // criar nible baixo com o  match len
             //adicionar / alterar token
             
             //println!("{}",literal_count);
 
+            let m_size: usize = count_end - count;
             let match_len:u8 = (m_size - MINMATCH) as u8;
             
-            let offset: u16= (p-m) as u16;
+            let offset: u16= (p-count) as u16;
 
             let mut token:u8; 
 
@@ -272,6 +309,7 @@ fn main() {
             //println!("token -> literals:{} | Tamanho do match:{} | Offset: {}",(token >> 4) & 0x0F, token & 0x0F, offset);
 
         }else{
+            
             p = p + 1;
             p_end = p + MINMATCH;
             literal_count+=1;
@@ -281,17 +319,17 @@ fn main() {
     
     // flush final apos loop para garantir saida de todos os bytes do arquivo
     // criar token com nibble baixo = 0
-    // 
+
     let mut token:u8;
 
-    if literal_count>0{
+    if token_pos<dados.len(){
         println!("Faltou flush...");
         println!("Flushing...");
-        println!("Posição do ponteiro p {}", token_pos);
+        println!("Posição do ponteiro token_pos {}", token_pos);
         
-        literal_count = (dados[token_pos ..].len()) as u16;
+        literal_count = (dados[token_pos ..].len()) as u128;
 
-        if literal_count  > 15{
+        if literal_count  >= 15{
             println!("Explodiu");
             token = ((15& 0x0F) << 4) | (0 & 0x0F);
             saida.push(token);
@@ -318,6 +356,7 @@ fn main() {
     //println!("Saida (bytes): {:?}", saida);
     //println!("Saida (lossy string): {}", String::from_utf8_lossy(&saida));
 
+    //salvando arquivo
     let path = std::path::Path::new(file_name);
     let parent = path.parent().unwrap_or_else(|| std::path::Path::new(""));
     let stem = path.file_stem().unwrap_or_default().to_string_lossy();
@@ -327,6 +366,7 @@ fn main() {
         Ok(_) => println!("Arquivo salvo em {}", nome_saida.display()),
         Err(err) => println!("Erro ao salvar arquivo: {}", err),
     }
+    println!("Compressão finalizada | Hora: {:?} ", std::time::SystemTime::now());
 
     //decompressor(&saida);
 
