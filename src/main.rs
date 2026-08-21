@@ -1,6 +1,4 @@
 
-
-const G_RATIO: f32 = 1.618;
 const FIB_HASH_MULT:u32 = 2654435761;
 const MAX_OFFSET:usize = 65535;
 const MINMATCH:usize = 4;
@@ -8,6 +6,38 @@ const HEADER_SIZE: usize = 4;
 
 //_______________________________________descompactacao/decompress_____________________________
 // codigo
+fn decompress_file(file_name: &String){
+    println!("Iniciando descompressão...");
+        
+    let file = std::fs::read(file_name);
+    
+    let bytes = match file{
+        Ok(bytes_compressed) => bytes_compressed,
+        Err(err) =>{
+            println!("Erro durante a leitura do arquivo");
+            return;
+        }
+    };
+
+    let extension = String::from_utf8_lossy(
+        &bytes[0..HEADER_SIZE].iter().cloned().take_while(|&b| b != 0).collect::<Vec<u8>>()
+    ).into_owned();
+    
+    let decompressed = decompressor(&bytes);
+    
+
+    let path = std::path::Path::new(file_name);
+    let parent = path.parent().unwrap_or_else(|| std::path::Path::new(""));
+    let stem = path.file_stem().unwrap_or_default().to_string_lossy();
+    let exit_name = parent.join(format!("{}_.{}", stem, extension));
+
+    match std::fs::write(&exit_name, decompressed){
+        Ok(_) => println!("Arquivo salvo em {}", exit_name.display()),
+        Err(err) => println!("Erro ao salvar arquivo: {}", err),
+    }
+    
+}
+
 
 fn decompressor(bytes: &Vec<u8>) -> Vec<u8>{
     let mut decompressed: Vec<u8> = Vec::new();
@@ -55,12 +85,17 @@ fn decompressor(bytes: &Vec<u8>) -> Vec<u8>{
         //extensao de matching
         if match_len >= 15{
             m_extra_bytes +=1; 
-        }
+        
 
-        while (bytes[idx + extra_bytes + (literal_count as usize) + m_extra_bytes + 2]) as usize >=255{
-            match_len+=255;
-            m_extra_bytes += 1;
+            while (bytes[idx + extra_bytes + (literal_count as usize) + m_extra_bytes + 2]) as usize >=255{
+                match_len+=255;
+                m_extra_bytes += 1;
+            }
+
+            match_len += bytes[idx + extra_bytes + (literal_count as usize) + m_extra_bytes + 2] as usize;
+        
         }
+        
         
         for i in (idx+extra_bytes+1..idx+extra_bytes+(literal_count as usize) + 1){
             decompressed.push(bytes[i]);
@@ -84,20 +119,24 @@ fn decompressor(bytes: &Vec<u8>) -> Vec<u8>{
 
 
 
-//hashing
-fn fib_hashing(bytes: &[u8], p:usize, hash_bits: u32) -> usize { 
-    let seq: u32 = u32::from_le_bytes([bytes[p], bytes[p+1], bytes[p+2], bytes[p+3]]);
-    
-    let h: u32 = seq.wrapping_mul(FIB_HASH_MULT);
-    (h >> (32 - hash_bits)) as usize
-}
+//hashing (old)
+//fn fib_hashing(bytes: &[u8], p:usize, hash_bits: u32) -> usize { 
+//    let seq: u32 = u32::from_le_bytes([bytes[p], bytes[p+1], bytes[p+2], bytes[p+3]]);
+//    
+//    let h: u32 = seq.wrapping_mul(FIB_HASH_MULT);
+//    (h >> (32 - hash_bits)) as usize
+//}
 
 
 
 //_______________________________________compressao/compactacao________________________________
-fn compress(bytes: &[u8]) -> Vec<u8>{
+fn compress(bytes: &[u8], header:&[u8]) -> Vec<u8>{
 
     let mut compressed: Vec<u8> = Vec::new();
+    
+    for i in 0 .. HEADER_SIZE{
+        compressed.push(header[i]);
+    }
     
     let hash_bits:u32 = 16;
     let table_size: usize = 1 << hash_bits;
@@ -109,7 +148,7 @@ fn compress(bytes: &[u8]) -> Vec<u8>{
 
     let mut literal_count:u128 = 0;
 
-    let mut token_position: usize = 0;
+    let mut token_position: usize = idx;
     
     println!("Iniciando compressão");
     
@@ -131,18 +170,27 @@ fn compress(bytes: &[u8]) -> Vec<u8>{
                     token = ((15& 0x0F) << 4) | (0 & 0x0F);
                     
                     literal_count -= 15;
+
+                    compressed.push(token);
+
+                    while literal_count >= 255 {
+                        compressed.push(255);
+                        literal_count -= 255;
+                    }
+
+                    if literal_count > 0 {
+
+                        compressed.push(literal_count as u8);
+
+                    }
+
                 }else{
+
                     token = ((literal_count as u8 & 0x0F) << 4) | (0 & 0x0F);
+                    compressed.push(token);
+
                 }
 
-                compressed.push(token);
-
-                while literal_count >= 255 {
-                    compressed.push(255);
-                    literal_count -= 255;
-                }
-                
-                compressed.push(literal_count as u8);
                 
                 for i in token_position .. bytes.len(){
                     compressed.push(bytes[i]);
@@ -175,9 +223,18 @@ fn compress(bytes: &[u8]) -> Vec<u8>{
                 if idx-match_idx <= MAX_OFFSET{
                 
                     while match_idx_end < idx && bytes[match_idx .. match_idx_end] == bytes[idx .. idx_end] && match_idx_end < bytes.len() && idx_end < bytes.len(){
+
                         b_match = true;
                         match_idx_end += 1;
-                        idx_end +=1;
+                        idx_end += 1;
+
+                    }
+
+                    if b_match {
+
+                        match_idx_end -= 1;
+                        idx_end -= 1;
+
                     }
                 }
 
@@ -200,17 +257,23 @@ fn compress(bytes: &[u8]) -> Vec<u8>{
             let mut token: u8;
             
             let mut match_len: usize = match_idx_end - match_idx - MINMATCH;
-            
+            let match_size = match_len + MINMATCH;
+
+
+            let mut literal_saturated: bool = false;
+            let mut match_saturated: bool = false;
 
             //checar para expansoes de literais
             if literal_count >= 15 {
 
                 token = ((15& 0x0F) << 4);
                 literal_count-=15;
+                literal_saturated = true;
 
             }else{
 
                 token = ((literal_count as u8 & 0x0F) << 4);
+                literal_count = 0;
 
             }
 
@@ -218,11 +281,13 @@ fn compress(bytes: &[u8]) -> Vec<u8>{
             if match_len>=15{
 
                 token = (token& 0xF0) | 15;
+                match_len -= 15;
+                match_saturated = true;
 
             }else{
 
                 token = (token& 0xF0) | match_len as u8;
-
+                match_len = 0;
             }
             
             compressed.push(token);
@@ -232,8 +297,11 @@ fn compress(bytes: &[u8]) -> Vec<u8>{
             while literal_count >= 255{
                 compressed.push(255);
                 literal_count -= 255;
+
             }
-            compressed.push(literal_count as u8);
+            if literal_count>0 || literal_saturated == true{
+                compressed.push(literal_count as u8);
+            }
 
             //for loop para evitar problemas de borrow
             for i in token_position .. idx{
@@ -249,11 +317,16 @@ fn compress(bytes: &[u8]) -> Vec<u8>{
                 compressed.push(255);
                 match_len -= 255;
             }
-            compressed.push(match_len as u8);
+            if match_len > 0 || match_saturated == true{
 
-            idx += match_len + MINMATCH;
+                compressed.push(match_len as u8);
+
+            }
+
+            idx += match_size ;
             token_position = idx;
             idx_end = idx + MINMATCH;
+            literal_count = 0;
             
         }else{
 
@@ -264,48 +337,61 @@ fn compress(bytes: &[u8]) -> Vec<u8>{
         }
 
     }
-    
+    println!("Tamanho final da saída {} | entrada {}  | Taxa de compressao: {} ", compressed.len(), bytes.len(), (1 as f32 - (compressed.len()) as f32/(bytes.len()) as f32) );
     return compressed; 
 
 }
 
 
+fn read_file_extension(file_name: &String) -> [u8;HEADER_SIZE]{
+    let extensao = std::path::Path::new(file_name)
+        .extension()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+
+    let mut header: [u8; 4] = [0; 4];
+    for (i, b) in extensao.bytes().take(HEADER_SIZE).enumerate() {
+        header[i] = b;
+    }
+    header
+}
 
 
 fn main(){
     
     let args: Vec<String> = std::env::args().collect();
 
-    //if args[1] == "decompress"{
-    //    decompress_file(&args[2]);
-    //    std::process::exit(0);
-    //}
+    if args[1] == "decompress"{
+        decompress_file(&args[2]);
+        std::process::exit(0);
+    }
 
     let file_name : &String = &args[1];
     
 
-    //let header = read_file_extension(file_name);    
+    let header = read_file_extension(file_name);    
 
-    let arquivo =std::fs::read(&args[1]);
-    let dados = match arquivo{
-        Ok(T) => T,
+    let file =std::fs::read(&args[1]);
+    let bytes = match file{
+        Ok(file_bytes) => file_bytes,
         Err(err) =>{
             println!("Erro ao ler bytes do arquivo");
             return ();
         }
     };
 
-    let mut saida:Vec<u8> = compress(&dados);
+    let mut compressed:Vec<u8> = compress(&bytes, &header);
     
 
     //salvando arquivo
     let path = std::path::Path::new(file_name);
     let parent = path.parent().unwrap_or_else(|| std::path::Path::new(""));
     let stem = path.file_stem().unwrap_or_default().to_string_lossy();
-    let nome_saida = parent.join(format!("{}.tzp", stem));
+    let exit_name= parent.join(format!("{}.tzp", stem));
 
-    match std::fs::write(&nome_saida, &saida){
-        Ok(_) => println!("Arquivo salvo em {}", nome_saida.display()),
+    match std::fs::write(&exit_name, &compressed){
+        Ok(_) => println!("Arquivo salvo em {}", exit_name.display()),
         Err(err) => println!("Erro ao salvar arquivo: {}", err),
     }
     println!("Compressão finalizada | Hora: {:?} ", std::time::SystemTime::now());
