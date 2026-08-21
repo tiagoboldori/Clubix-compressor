@@ -130,10 +130,13 @@ fn compress(bytes: &[u8]) -> Vec<u8>{
                     
                     token = ((15& 0x0F) << 4) | (0 & 0x0F);
                     
-                    compressed.push(token);
-                    
                     literal_count -= 15;
+                }else{
+                    token = ((literal_count as u8 & 0x0F) << 4) | (0 & 0x0F);
                 }
+
+                compressed.push(token);
+
                 while literal_count >= 255 {
                     compressed.push(255);
                     literal_count -= 255;
@@ -197,9 +200,7 @@ fn compress(bytes: &[u8]) -> Vec<u8>{
             let mut token: u8;
             
             let mut match_len: usize = match_idx_end - match_idx - MINMATCH;
-            token_position = match_len + MINMATCH;
-            idx += match_len + MINMATCH;
-            idx_end = idx + MINMATCH;
+            
 
             //checar para expansoes de literais
             if literal_count >= 15 {
@@ -250,6 +251,9 @@ fn compress(bytes: &[u8]) -> Vec<u8>{
             }
             compressed.push(match_len as u8);
 
+            idx += match_len + MINMATCH;
+            token_position = idx;
+            idx_end = idx + MINMATCH;
             
         }else{
 
