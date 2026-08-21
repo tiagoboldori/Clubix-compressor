@@ -394,6 +394,7 @@ fn main(){
         Ok(_) => println!("Arquivo salvo em {}", exit_name.display()),
         Err(err) => println!("Erro ao salvar arquivo: {}", err),
     }
-    println!("Compressão finalizada | Hora: {:?} ", std::time::SystemTime::now());
+    println!("Compressão finalizada ");
+    // | Hora: {:?} ", std::time::SystemTime::now());
 
 }
