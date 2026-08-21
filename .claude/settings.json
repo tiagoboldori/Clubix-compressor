@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo build *)",
+      "Bash(rm -rf C:/Users/12181/AppData/Local/Temp/claude/c--Users-12181-Desktop-Clubix-compressor/e7b2450c-9bca-4cf8-87e0-4961a0560d9a/scratchpad/new_debug)",
+      "Bash(mkdir -p C:/Users/12181/AppData/Local/Temp/claude/c--Users-12181-Desktop-Clubix-compressor/e7b2450c-9bca-4cf8-87e0-4961a0560d9a/scratchpad/new_debug/src)",
+      "Bash(cp c:/Users/12181/Desktop/Clubix-compressor/Cargo.toml C:/Users/12181/AppData/Local/Temp/claude/c--Users-12181-Desktop-Clubix-compressor/e7b2450c-9bca-4cf8-87e0-4961a0560d9a/scratchpad/new_debug/)",
+      "Bash(cp c:/Users/12181/Desktop/Clubix-compressor/src/main.rs C:/Users/12181/AppData/Local/Temp/claude/c--Users-12181-Desktop-Clubix-compressor/e7b2450c-9bca-4cf8-87e0-4961a0560d9a/scratchpad/new_debug/src/)"
+    ]
+  }
+}

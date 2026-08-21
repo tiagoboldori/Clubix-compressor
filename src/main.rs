@@ -142,7 +142,7 @@ fn compress(bytes: &[u8], header:&[u8], pb: &ProgressBar) -> Vec<u8>{
     let hash_bits:u32 = 16;
     let table_size: usize = 1 << hash_bits;
     
-    let mut table: Vec<Option<usize>> = vec![None;table_size];
+    let mut table: Vec<usize> = vec![usize::MAX;table_size];
     
     let mut idx:usize = 0;
     let mut idx_end:usize = idx + MINMATCH;
@@ -156,7 +156,9 @@ fn compress(bytes: &[u8], header:&[u8], pb: &ProgressBar) -> Vec<u8>{
     //loop de compressao
     while true{
         
-        pb.set_position(idx as u64);
+        if idx % 16384 == 0{
+            pb.set_position(idx as u64);
+        }
 
         if idx_end >= bytes.len(){
             
@@ -206,7 +208,7 @@ fn compress(bytes: &[u8], header:&[u8], pb: &ProgressBar) -> Vec<u8>{
 
 
         //hashing direto no loop para evitar problemas de borrow/copia com os bytes
-        let seq: u32 = u32::from_le_bytes([bytes[idx], bytes[idx+1], bytes[idx+2], bytes[idx+3]]);
+        let seq: u32 = u32::from_le_bytes(bytes[idx..idx+4].try_into().unwrap());
         let h: u32 = seq.wrapping_mul(FIB_HASH_MULT);
 
         let hash_idx: usize = (h >> (32 - hash_bits)) as usize;
@@ -216,41 +218,45 @@ fn compress(bytes: &[u8], header:&[u8], pb: &ProgressBar) -> Vec<u8>{
 
         let mut b_match: bool = false;
 
-        match table[hash_idx]{
-            Some(usize_t) => {
+        if table[hash_idx] != usize::MAX{
+
+            match_idx = table[hash_idx];
+            match_idx_end = match_idx + MINMATCH;
+            
+            
+            if idx-match_idx <= MAX_OFFSET && bytes[match_idx .. match_idx_end] == bytes[idx .. idx_end]{
                 
-                match_idx = usize_t;
-                match_idx_end = match_idx + MINMATCH;
-                
-                
-                if idx-match_idx <= MAX_OFFSET{
-                
-                    while match_idx_end < idx && bytes[match_idx .. match_idx_end] == bytes[idx .. idx_end] && match_idx_end < bytes.len() && idx_end < bytes.len(){
+                // Mudando o b_match para ca (antes estava algumas linhas abaixo)
+                // o comportamento (compressao e velocidade) muda.
+                // Com o match abaixo (apos o laço WHILE) o codigo acaba
+                // por buscar match de tamanho MINMATCH + 1, sendo melhor para
+                // arquivos REPETITIVOS, pior para alta entropia.
+                b_match = true;
 
-                        b_match = true;
-                        match_idx_end += 1;
-                        idx_end += 1;
+                while match_idx_end < idx && match_idx_end < bytes.len() && idx_end < bytes.len() && bytes[match_idx_end] == bytes[idx_end]{
 
-                    }
+                    match_idx_end += 1;
+                    idx_end += 1;
 
-                    if b_match {
-
-                        match_idx_end -= 1;
-                        idx_end -= 1;
-
-                    }
                 }
 
-            },
-            None => {
-                match_idx = 0;
-                match_idx_end = 0;
-                ()
+                if b_match {
+
+                    //match_idx_end -= 1;
+                    //idx_end -= 1;
+                    //b_match = true;
+
+                }
             }
-            
+
+        } else{
+            match_idx = 0;
+            match_idx_end = 0;
         }
+            
+            
         //match end
-        table[hash_idx] = Some(idx);
+        table[hash_idx] = idx;
 
         //bateu, montar token e checar possíveis expansões
         if b_match==true{
