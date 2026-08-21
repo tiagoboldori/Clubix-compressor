@@ -1,3 +1,4 @@
+use indicatif::{ProgressBar,ProgressStyle};
 
 const FIB_HASH_MULT:u32 = 2654435761;
 const MAX_OFFSET:usize = 65535;
@@ -130,7 +131,7 @@ fn decompressor(bytes: &Vec<u8>) -> Vec<u8>{
 
 
 //_______________________________________compressao/compactacao________________________________
-fn compress(bytes: &[u8], header:&[u8]) -> Vec<u8>{
+fn compress(bytes: &[u8], header:&[u8], pb: &ProgressBar) -> Vec<u8>{
 
     let mut compressed: Vec<u8> = Vec::new();
     
@@ -154,6 +155,8 @@ fn compress(bytes: &[u8], header:&[u8]) -> Vec<u8>{
     
     //loop de compressao
     while true{
+        
+        pb.set_position(idx as u64);
 
         if idx_end >= bytes.len(){
             
@@ -337,7 +340,10 @@ fn compress(bytes: &[u8], header:&[u8]) -> Vec<u8>{
         }
 
     }
+    
+    pb.finish_with_message("compressão concluída");
     println!("Tamanho final da saída {} | entrada {}  | Taxa de compressao: {} ", compressed.len(), bytes.len(), (1 as f32 - (compressed.len()) as f32/(bytes.len()) as f32) );
+
     return compressed; 
 
 }
@@ -381,7 +387,11 @@ fn main(){
         }
     };
 
-    let mut compressed:Vec<u8> = compress(&bytes, &header);
+    let pb = ProgressBar::new(bytes.len() as u64);
+    pb.set_style(ProgressStyle::with_template(
+        "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})"
+    ).unwrap());
+    let mut compressed:Vec<u8> = compress(&bytes, &header, &pb);
     
 
     //salvando arquivo
