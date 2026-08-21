@@ -35,6 +35,8 @@ Como a leitura do arquivo é feita sem chunking não recomendo o uso para arquiv
 #### Limitações
 Relacionadas ao todo atual.
 
+- Desencorajado o uso em arquivos grandes com baixa redundância (+3gb) devido as operações de escrita/leitura.
+
 - Repeticoes proximas com offset pequeno tem reaproveitamento baixo ou nulo.
 
 - Arquivos com baixa redundância (ou já comprimidos) tem um aproveitamento baixo.
