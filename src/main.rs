@@ -6,7 +6,6 @@ const MINMATCH:usize = 4;
 const HEADER_SIZE: usize = 4;
 
 //_______________________________________descompactacao/decompress_____________________________
-// codigo
 fn decompress_file(file_name: &String){
     println!("Iniciando descompressão...");
         
@@ -82,11 +81,9 @@ fn decompressor(bytes: &Vec<u8>) -> Vec<u8>{
             offset = 0;
         }
         
-        
         //extensao de matching
         if match_len >= 15{
             m_extra_bytes +=1; 
-        
 
             while (bytes[idx + extra_bytes + (literal_count as usize) + m_extra_bytes + 2]) as usize >=255{
                 match_len+=255;
