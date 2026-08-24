@@ -238,11 +238,9 @@ fn compress(bytes: &[u8], header:&[u8], pb: &ProgressBar) -> Vec<u8>{
                 }
 
                 if b_match {
-
                     //match_idx_end -= 1;
                     //idx_end -= 1;
                     //b_match = true;
-
                 }
             }
 
@@ -250,7 +248,6 @@ fn compress(bytes: &[u8], header:&[u8], pb: &ProgressBar) -> Vec<u8>{
             match_idx = 0;
             match_idx_end = 0;
         }
-            
             
         //match end
         table[hash_idx] = idx;
@@ -264,7 +261,6 @@ fn compress(bytes: &[u8], header:&[u8], pb: &ProgressBar) -> Vec<u8>{
             
             let mut match_len: usize = match_idx_end - match_idx - MINMATCH;
             let match_size = match_len + MINMATCH;
-
 
             let mut literal_saturated: bool = false;
             let mut match_saturated: bool = false;
@@ -317,7 +313,6 @@ fn compress(bytes: &[u8], header:&[u8], pb: &ProgressBar) -> Vec<u8>{
             
             compressed.extend_from_slice(&offset.to_le_bytes());
 
-
             //expansao de match
             while match_len>=255{
                 compressed.push(255);
@@ -348,7 +343,6 @@ fn compress(bytes: &[u8], header:&[u8], pb: &ProgressBar) -> Vec<u8>{
     println!("Tamanho final da saída {} | entrada {}  | Taxa de compressao: {} ", compressed.len(), bytes.len(), (1 as f32 - (compressed.len()) as f32/(bytes.len()) as f32) );
 
     return compressed; 
-
 }
 
 
@@ -377,12 +371,11 @@ fn main(){
     }
 
     let file_name : &String = &args[1];
-    
 
-    let header = read_file_extension(file_name);    
+    let header: [u8;4]= read_file_extension(file_name);    
 
-    let file =std::fs::read(&args[1]);
-    let bytes = match file{
+    let file :Result<Vec<u8>, std::io::Error>=std::fs::read(&args[1]);
+    let bytes: Vec<u8> = match file{
         Ok(file_bytes) => file_bytes,
         Err(err) =>{
             println!("Erro ao ler bytes do arquivo");
@@ -390,12 +383,11 @@ fn main(){
         }
     };
 
-    let pb = ProgressBar::new(bytes.len() as u64);
+    let pb: ProgressBar = ProgressBar::new(bytes.len() as u64);
     pb.set_style(ProgressStyle::with_template(
         "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})"
     ).unwrap());
-    let mut compressed:Vec<u8> = compress(&bytes, &header, &pb);
-    
+    let compressed:Vec<u8> = compress(&bytes, &header, &pb);
 
     //salvando arquivo
     let path = std::path::Path::new(file_name);
