@@ -400,6 +400,5 @@ fn main(){
         Err(err) => println!("Erro ao salvar arquivo: {}", err),
     }
     println!("Compressão finalizada ");
-    // | Hora: {:?} ", std::time::SystemTime::now());
 
 }
