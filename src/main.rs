@@ -10,6 +10,7 @@ const HEADER_SIZE: usize = 4;
 // todo: para demandas internas também é interessante a criação de um conversor MOV <-> MP4
 // com isso será necessário dividir o projeto em modulos/crates para organização a manutenção facilitada
 fn convert() -> (){
+    println!("convesor de arquivo .MOV simples (sem cod/decod de midia)");
     ()
 }
 
