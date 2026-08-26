@@ -5,6 +5,15 @@ const MAX_OFFSET:usize = 65535;
 const MINMATCH:usize = 4;
 const HEADER_SIZE: usize = 4;
 
+
+
+// todo: para demandas internas também é interessante a criação de um conversor MOV <-> MP4
+// com isso será necessário dividir o projeto em modulos/crates para organização a manutenção facilitada
+fn convert() -> (){
+    ()
+}
+
+
 //_______________________________________descompactacao/decompress_____________________________
 fn decompress_file(file_name: &String){
     println!("Iniciando descompressão...");
@@ -318,6 +327,7 @@ fn compress(bytes: &[u8], header:&[u8], pb: &ProgressBar) -> Vec<u8>{
                 compressed.push(255);
                 match_len -= 255;
             }
+
             if match_len > 0 || match_saturated == true{
 
                 compressed.push(match_len as u8);
